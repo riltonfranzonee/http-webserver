@@ -19,26 +19,32 @@ struct HttpRequest {
 struct HttpRequest* parse_request(char* buffer) {
     static struct HttpRequest httprequest;
     httprequest.method = strtok(buffer, " ");
-    httprequest.url = strtok(NULL, " ") + 1;
+    if(httprequest.method == NULL) {
+        httprequest.method = "";
+        httprequest.url = "";
+    } else {
+        httprequest.url = strtok(NULL, " ") + 1;
+    }
     return &httprequest;
 }
 
 int main() {
     int s = socket(PF_INET, SOCK_STREAM, 0);
 
-    struct sockaddr_in server, client;
-
+    struct sockaddr_in server;
     server.sin_family = PF_INET;
     server.sin_port = htons(PORT);
     server.sin_addr.s_addr = inet_addr("127.0.0.1");
     
     socklen_t serverlen = (socklen_t) sizeof(server);
-    socklen_t clientlen = (socklen_t) sizeof(client);
 
     bind(s, (struct sockaddr*) &server, serverlen);
     listen(s, MAX_PENDING_CONNECTIONS);
     
     printf("server listening on port %d\n", PORT);
+
+    struct sockaddr_in client;
+    socklen_t clientlen = (socklen_t) sizeof(client);
 
     while(1) {
         int clientsocket = accept(s, (struct sockaddr*) &client, &clientlen);
@@ -46,28 +52,30 @@ int main() {
         
         char* buffer = calloc(BUFFER_SIZE, sizeof(char));
         recv(clientsocket, buffer, BUFFER_SIZE, 0);
-        
-        struct HttpRequest* req = parse_request(buffer);
-        
-        char* res = calloc(BUFFER_SIZE, sizeof(char));
 
+        struct HttpRequest* req = parse_request(buffer);
         if(strcmp(req->method, "GET") != 0) {
-            strcat(res, "HTTP/1.0 501 Method not implemented\r\n\r\n");
+            char* res = "HTTP/1.0 501 Method not implemented\r\n\r\n";
             send(clientsocket, res, strlen(res), 0);
             close(clientsocket);
+            free(buffer);
             continue;
         }
 
+
         FILE* file = fopen(req->url, "r");
         if(file == NULL) {
-            strcat(res, "HTTP/1.0 404 Not Found\r\nContent-Length: 18\r\n\r\n<h1>Not found</h1>");
+            char* res = "HTTP/1.0 404 Not Found\r\nContent-Length: 18\r\n\r\n<h1>Not found</h1>";
             send(clientsocket, res, strlen(res), 0);
             close(clientsocket);
+            free(buffer);
             continue;
         }
 
         struct stat file_status;
         stat(req->url, &file_status);
+
+        char* res = calloc(BUFFER_SIZE, sizeof(char));
  
         // send HTTP status/headers packet separately
         sprintf(res, "HTTP/1.0 200 OK\r\nContent-Length: %lld\r\n\r\n", file_status.st_size); 
